@@ -10,7 +10,7 @@
 源仓库不需要 GitHub Release。插件直接读取 `packages/index.json`，按其中的 URL 下载不可变 `.pysource` 包。默认目录地址为：
 
 ```text
-https://raw.githubusercontent.com/UFOAlastor/PicaYomi_MangaSources/main/packages/index.json
+https://raw.githubusercontent.com/UFOAlastor/PicaYomi_Sources/main/packages/index.json
 ```
 
 已有同发布身份的源在默认引导时绑定订阅。默认公钥由宿主预置；用户主动输入其他订阅地址即授权首次信任。后续固定发布身份与密钥，身份变化不能静默接受。
@@ -32,7 +32,7 @@ python3 tools/build_source.py "$PYSOURCE_ROOT/mysource" --out dist/sources
 ```sh
 python3 tools/build_catalog.py dist/sources \
   --key /secure/sources-ed25519.pem --revision 2 \
-  --base-url https://raw.githubusercontent.com/UFOAlastor/PicaYomi_MangaSources/main/packages \
+  --base-url https://raw.githubusercontent.com/UFOAlastor/PicaYomi_Sources/main/packages \
   --out dist/sources/index.json
 ```
 

@@ -1,8 +1,10 @@
-# PicaYomi MangaSources
+# PicaYomi Sources
 
 [PicaYomi 插件](https://github.com/UFOAlastor/koreader_PicaYomi)的漫画与小说源。在插件中安装后，可浏览、搜索、阅读和下载各平台作品。
 
 ## 订阅与更新
+
+仓库已由 PicaYomi Sources 更名为 **PicaYomi Sources**。请使用 **插件 1.1.8** 内置的新默认订阅；旧版用户先升级插件，移除旧订阅，保留新订阅；没有订阅时点击“恢复默认订阅”。小说源版本仍为 1.0.0。
 
 插件预置本仓库的默认订阅。日常更新通过插件的 **设置 → 源管理 → 更新源（全部订阅）** 完成。
 
@@ -41,7 +43,7 @@ shasum -a 256 -c SHA256SUMS
 - 宿主评论列表显示短预览，长评论可点开本地全文浮窗；支持的源可查看回复，不提供发表操作。
 - 离线检查与匿名浏览结果不能证明账号操作、全部作品或所有设备可用。故障反馈请提供源版本、插件版本、复现步骤及脱敏报错。
 
-源适配问题请提交到本仓库的 [Issues](https://github.com/UFOAlastor/PicaYomi_MangaSources/issues)；阅读器和通用界面问题请提交到[插件仓库](https://github.com/UFOAlastor/koreader_PicaYomi/issues)。
+源适配问题请提交到本仓库的 [Issues](https://github.com/UFOAlastor/PicaYomi_Sources/issues)；阅读器和通用界面问题请提交到[插件仓库](https://github.com/UFOAlastor/koreader_PicaYomi/issues)。
 
 ## 制作源
 
