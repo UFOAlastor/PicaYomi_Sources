@@ -1,0 +1,18 @@
+{
+  "id": "wenku8",
+  "name": "轻小说文库",
+  "author": "PicaYomi contributors",
+  "publisher_id": "picayomi.wenku8",
+  "version": "1.0.0",
+  "api_version": 3,
+  "min_app_version": "1.1.7",
+  "entry": "main.lua",
+  "content_type": "novel",
+  "identity_policy": "stable",
+  "data_schema_version": 1,
+  "cache_schema_version": 1,
+  "text_filters": [
+    "本文来自 轻小说文库(http://www.wenku8.com)",
+    "最新最全的日本动漫轻小说 轻小说文库(http://www.wenku8.com) 为你一网打尽！"
+  ]
+}

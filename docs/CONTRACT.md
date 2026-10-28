@@ -1,5 +1,7 @@
 # SDK 与源契约（API v3）
 
+**1.1.0 小说扩展（开发中）**：manifest 可声明 `content_type="novel"`，且最低宿主必须为 1.1.0。小说以 `getChapterContent(book_id,chapter_id,call)` 代替必需的 `getPages`，返回 `{format="html",html=…,base_url=…,complete=true}` 的标准三元组；正文上限 256 KiB，base_url 是公开章节 URL，不能携带凭据。源先验证正文完整性、付费/访问限制与同章分页；宿主清理 HTML、下载并本地化插图。账号、在线收藏、只读评论继续沿用下面的可选能力。小说可声明 download，由共享队列保存完整 HTML 与插图；其他源默认 comic，既有 PageList 不变。具体实现与限制见 [小说源说明](NOVEL_SOURCES.md)。
+
 适用宿主：PicaYomi **0.10.6 起**。新源使用 `templates/api-v3`。公开制作资料仅维护当前 API v3。源仍是用户信任的 Lua 代码，SDK 不是安全沙箱。
 
 ## 包与生命周期
@@ -8,11 +10,25 @@
 
 入口返回 `function(ctx)`，工厂返回普通表 `{capabilities=...,access=...}`，无需继承基类。工厂、模块顶层、`init(ctx)` 均禁止联网。init 恢复本地状态并注册处理器，返回 `(true,{success=true},nil)`。宿主只初始化一次，固定包摘要；更新为 pending，重启激活。初始化成功不代表真实平台可用。
 
+## 小说固定文案（宿主 1.1.1 起）
+
+小说 manifest 可声明 `text_filters=["逐字匹配的站点固定文案"]`，最多 32 条，每条 1–512 字节且不含控制字符。非小说源不得声明；最低宿主需设为 1.1.1。必须从实际正文抽样确认；源没有稳定文案时用空数组，不能按站名或“本文”等宽泛词批量删除叙述。源制作者记录采样位置与未发现情况，更新默认文案需要升级源版本。
+
+用户可在“源管理 → 对应小说源 → 固定文案过滤”或小说阅读设置中查看、开启/关闭、逐行编辑、恢复默认。用户修改按源隔离，覆盖源默认列表。宿主只对净化后的文本节点逐字匹配，保留标签和图片地址；每次打开时从原始已缓存或下载的章节生成阅读副本，因此不破坏原始下载，关闭后可恢复。空列表不删除任何内容。
+
 ## 返回值与模型
 
 所有业务方法返回 `(true,data,nil)` 或 `(false,nil,SourceError)`，成功 data 不能为 nil，写操作成功为 `{success=true}`。失败不能伪装为空列表或部分目录/图片。空浏览与空目录合法，零页章节不能开始阅读。
 
 `SourceError={code,message,retryable,operation?,field?}`，通过 `ctx.error(code,message,operation,field,retryable)` 构造。code 为 unsupported、auth_required、auth_expired、network、timeout、rate_limited、not_found、protocol_changed、invalid_response、cancelled、resource_limit。message 不带凭据、完整认证 URL 或个人响应；宿主不匹配文案决定重试或登录。
+
+### 错误信息与兼容源
+
+原生源与未来的主流格式适配器遵循相同原则：只为明确可识别、可验证的场景归类并补充操作提示，例如认证失效、限流、超时、取消和数据不完整。不要逐个匹配小众站点公告，也不依据未知文案猜测权限、重试条件或故障原因。
+
+接口已返回明确的可读错误时，优先将其原意保留在 `message`，不统一改写成“源质量差”或“数据结构变化”。上游错误码由源或兼容适配器映射到已知的标准码；不能识别的请求失败可用 `network`，保留上游有效消息，默认不自动重试，不将上游任意码直接传给 `ctx.error`。没有有效消息时再用简短兜底提示。
+
+透传限于错误文本：提取服务返回的错误字段或页面中明确的错误区域，过滤凭据并控制长度；不将整页 HTML、原始个人响应、堆栈或 Lua 异常直接交给界面。运行异常与协议校验失败继续兜底；空目录、残缺正文及未验证的写入不能伪装成成功。宿主保持通用处理，站点解析与已确认的协议差异留在源包内。
 
 | 模型 | 字段 |
 |---|---|
@@ -21,7 +37,7 @@
 | ListResult | 连续数组 `items`、布尔 `has_more`；true 必须提供非空 `next` 对象，false 不提供 next；准确 total 可选 |
 | PageList | 连续数组 `items`、`complete=true`，必须是完整章节 |
 | Page | 从 1 连续递增的 `index`、`resource={url}`；可选 context、`processors={file?,render?}` |
-| Comment | `id/content/author`，author 是对象；可选 created_at、likesCount、repliesCount、内嵌 replies |
+| Comment | `id/content/author`，author 是对象；可选 created_at、likesCount、repliesCount、内嵌 replies；1.1.0 起可带 `content_complete` 布尔值 |
 | 元数据 | 分类、榜单和排序使用 `{id,title,...}` 数组，分类可带 isWeb/link |
 
 ID 是最长 512 字节的非空 UTF-8 不透明字符串，可含平台分隔符；宿主转换存储键，源不接触文件路径。标题最多 4096 字节。每个列表最多 20000 项；复制最多 200000 节点、12 层、普通单字符串 256 KiB、单批累计文本与键 8 MiB。只接受 JSON 数据，不接受函数、任意元表、循环、userdata 或 JSON null；rapidjson 的 array/object 标记可用。结果经校验和深拷贝后进入消费者，不修改源缓存。
@@ -30,7 +46,7 @@ context/next 最多 16 KiB，为有界 JSON 对象。禁止凭据、请求头、
 
 ## 方法与分页
 
-以下方法最后一个参数均为宿主 call，上下文含 deadline（墙钟秒）、cancelled、可选 isCancelled() 和代次信息。源不保存或修改 call，它与持久化 page context 分开。
+以下方法最后一个参数均为宿主 call，上下文含 deadline（墙钟秒）、cancelled、可选 isCancelled() 和代次信息。源不保存或修改 call，它与持久化 page context 分开。宿主 1.1.2 的目录加载可提供可选 `call.on_progress({completed=n,total=m})`，仅用于报告已核对的真实分卷数；源先判断回调存在，总数未知不填百分比，完整目录仍校验完成后一次发布。
 
 | 接口 | 结果与能力 |
 |---|---|
@@ -47,12 +63,17 @@ context/next 最多 16 KiB，为有界 JSON 对象。禁止凭据、请求头、
 | `getSession(call)` / `getUserProfile(call)` | `{logged_in=boolean}` / 资料对象，login |
 | `getFavorites(request,call)` / `addFavorite(id,call)` / `removeFavorite(id,call)` | 列表 / 明确设定状态的成功结果，favorites |
 | `getComments(id,request,call)` / `getCommentReplies(id,comment_id,request,call)` | ListResult<Comment>，只读 comments / paged 回复 |
+| `getCommentDetails(id,comment_id,call)` | 完整 Comment；1.1.0 起可选 `comment_details=true`，要求 comments |
 
 首轮 request 不带续页字段；后续合并上一轮 next 的不透明内容，可带 sort/categories。例如 next={cursor="abc"}，下次接收 {cursor="abc",sort=...}。不要假定只有页码。未知总量不填 total，不伪造 pages，界面按 has_more 翻页。目录最多 200 次请求 / 20000 章，拒绝重复 continuation/ID，取消或失败不发布部分结果。
 
 宿主 **0.11.20 起**，作品列表可额外声明 `pagination={mode="page",page=1,pages=695,page_size=20}`，仅用于源站确实支持任意页码定位并提供末页的接口。三个数字须为正整数，页码与末页最多 1000000、每页容量最多 20000；page 不超过 pages，has_more 等于 page<pages，续页只能是 `{page=page+1}`。宿主按查询/排序隔离声明，验证成功后允许在范围内直接跳页，不受游标遍历的 200 页上限影响；仍只保留有界续页状态。`page_size` 是固定每页容量，末页不足整页时不缩小。只有分页器末页、没有准确条数时不填 total；不依赖额外游标的页码源才能使用此扩展，并须声明最低宿主 0.11.20。其他源继续使用不透明 next，不从普通 `{page=...}` 续页推断支持跳页。
 
-能力键：login、requires_login、recommendations、latest、search、categories、rankings、favorites、comments、download、local_favorites；random 是兼容保留接口，没有首页入口。未声明关闭，未知键或缺实现激活失败。requires_login 要求 login；部分功能登录用 `access={favorites="login"}`。replies 为 none/embedded/paged，后两者要求 comments。评论仅只读，所有源不实现发表。
+评论及回复列表从宿主 **1.1.1 起** 支持同一 `pagination` 声明和范围内直接跳页；使用时将源最低宿主设为 1.1.1。没有明确末页时仍只返回 has_more/next，不猜测总页数。
+
+能力键：login、requires_login、recommendations、latest、search、categories、rankings、favorites、comments、download、local_favorites；1.1.0 新增 comment_details。random 是兼容保留接口，没有首页入口。未声明关闭，未知键或缺实现激活失败。requires_login 要求 login；部分功能登录用 `access={favorites="login"}`。replies 为 none/embedded/paged，后两者要求 comments。评论仅只读，所有源不实现发表。
+
+评论列表如果只有标题或缩略正文，必须返回 `content_complete=false`，并实现只读 `getCommentDetails`、声明最低宿主 1.1.0；全文需要登录时声明 `access={comment_details="login"}`。宿主仅在用户打开该条时取全文，保留原列表与回复入口，关闭页面或切换账号取消加载；不得为每条预抓全文，也不能把缩略正文标成完整。原有不带该字段的漫画评论行为不变。
 
 宿主 0.11.5 起，未登录也可进入主页、切源、设置及离线入口；`requires_login` 与 `access` 约束具体在线动作，不应将支持账号等同于整个插件必须登录。
 
@@ -78,7 +99,7 @@ v3 没有 ctx.host、ctx.base、ctx.module；通过 `ctx.require("api")` 导入�
 
 | 服务 | 调用约定 |
 |---|---|
-| ctx.http | 冒号调用 get(url,headers,timeout)、post(url,headers,body,timeout)、requestWithRetry(method,url,headers,body,timeout)，返回 response/err，response 含 status_code/body。沿用宿主可取消任务和网络策略；超时受 call deadline 与 60 秒上限约束，不自行开 socket/后台进程 |
+| ctx.http | 冒号调用 get(url,headers,timeout)、post(url,headers,body,timeout)、requestWithRetry(method,url,headers,body,timeout)；1.1 起可用 requestOnce(method,url,headers,body,timeout) 处理不跟随重定向、不重试的单次 HTTPS 请求；返回 response/err，response 含 status_code/body。沿用宿主可取消任务和网络策略；超时受 call deadline 与 60 秒上限约束，不自行开 socket/后台进程 |
 | ctx.json / ctx.html | decode/encode；parse(html) 与节点 select/textonly。JSON null 用 ctx.values 处理，不返回宿主 |
 | ctx.values | str/num/bool/list/str_list，带缺省值的 JSON 字段读取辅助 |
 | ctx.aes / ctx.b64 / ctx.hmac / ctx.hashes | 通用加解密/编码；hashes 的 md5/sha256 返回十六进制字符串，不包含平台协议常量 |

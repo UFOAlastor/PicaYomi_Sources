@@ -99,6 +99,16 @@ def build(source, output, base_url=None, name="PicaYomi Sources", notes="", sign
         raise ValueError("API v2/v3 requires publisher_id")
     if manifest["api_version"] == 3 and tuple(map(int, manifest["min_app_version"].split("."))) < (0, 10, 6):
         raise ValueError("API v3 requires min_app_version >= 0.10.6")
+    if manifest.get("content_type") not in (None, "comic", "novel"):
+        raise ValueError("invalid content_type")
+    if manifest.get("content_type") == "novel" and (manifest["api_version"] != 3 or tuple(map(int, manifest["min_app_version"].split("."))) < (1, 1, 0)):
+        raise ValueError("novel sources require API v3 and min_app_version >= 1.1.0")
+    if "text_filters" in manifest:
+        lines = manifest["text_filters"]
+        if (manifest.get("content_type") != "novel" or tuple(map(int, manifest["min_app_version"].split("."))) < (1, 1, 1) or not isinstance(lines, list) or len(lines) > 32
+                or any(not isinstance(line, str) or not 0 < len(line.encode()) <= 512
+                       or any(ord(c) < 32 or ord(c) == 127 for c in line) for line in lines)):
+            raise ValueError("invalid novel text_filters")
     if manifest.get("identity_policy") == "legacy" and manifest["id"] not in {"picacg", "jm", "htcomic"}:
         raise ValueError("legacy identity is reserved for migrated sources")
     if manifest.get("identity_policy") not in (None, "stable", "legacy"):

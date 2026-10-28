@@ -6,3 +6,5 @@
 - copymanga 源的字段解析与协议参考来源记录在[适配案例](docs/COPYMANGA.md#协议参考)，包括网站公开页面及相关客户端实现。引用代码应保留对应版权和许可说明。
 - 模板中的 `.invalid` 地址与虚构响应用于教学和离线检查，不能作为真实站点适配交付。
 - 平台公开协议常量不代表平台授权或服务可用性保证。漫画作品、站点数据、商标与其他内容的权利属于相应权利人。
+
+- 小说源的公开协议研究参考：轻小说文库参考 [LightNovelReader](https://github.com/dmzz-yyhyy/LightNovelReader) 和 [Wild Novel](https://github.com/niuhuan/wild)；哔哩轻小说参考 [LNReader 插件](https://github.com/LNReader/lnreader-plugins) 和 [bili_novel_packer](https://github.com/Montaro2017/bili_novel_packer)。这些参考不代表对方为本源提供服务或承担维护；站点内容权利仍归相关权利人。
