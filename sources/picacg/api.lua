@@ -48,6 +48,10 @@ function PicacgAPI:request(http_client, headers, auth, method, path, body, no_re
     if not response then
         return nil, "网络请求失败: " .. tostring(err)
     end
+    if tonumber(response.status_code)==401 then
+        if auth.expire then auth:expire()end
+        return nil,"登录状态已失效，请重新登录"
+    end
 
     -- 解析 JSON
     local data = http_client:parseJsonResponse(response)
@@ -59,6 +63,10 @@ function PicacgAPI:request(http_client, headers, auth, method, path, body, no_re
         local status = tonumber(response.status_code)
         if status and status >= 400 then return nil, "服务器返回错误 (HTTP " .. status .. ")" end
         return nil, "响应解析失败"
+    end
+    if tonumber(data.code)==401 then
+        if auth.expire then auth:expire()end
+        return nil,"登录状态已失效，请重新登录"
     end
 
     -- 标准化响应: 确保有 code/message/data
@@ -238,8 +246,8 @@ function PicacgAPI:getComics(http_client, headers, auth, page, sort)
     if cached then return true, cached end
 
     local path = "comics?page=" .. page .. "&s=" .. sort
-    local data = self:request(http_client, headers, auth, "GET", path)
-    if not data then return false, nil, "网络请求失败" end
+    local data,reason = self:request(http_client, headers, auth, "GET", path)
+    if not data then return false, nil, reason or "网络请求失败" end
     if not isOk(data) then return false, nil, data.message or "获取漫画列表失败" end
 
     local result = extractComicList(data)
@@ -616,8 +624,8 @@ function PicacgAPI:getFavorites(http_client, headers, auth, page, sort)
     if cached then return true, cached end
 
     local path = "users/favourite?page=" .. page .. "&s=" .. sort
-    local data = self:request(http_client, headers, auth, "GET", path)
-    if not data then return false, nil, "网络请求失败" end
+    local data,reason = self:request(http_client, headers, auth, "GET", path)
+    if not data then return false, nil, reason or "网络请求失败" end
     if not isOk(data) then return false, nil, data.message or "获取收藏失败" end
 
     local result = extractComicList(data)

@@ -13,6 +13,9 @@ local PicacgAuth = {}
 local CONFIG_PREFIX = "source.picacg"
 local TOKEN_KEY = CONFIG_PREFIX .. ".token"
 local USERNAME_KEY = CONFIG_PREFIX .. ".username"
+local function clear_favorites()
+    if ctx.cache and ctx.cache.clearPattern then ctx.cache:clearPattern("picacg_favs_")end
+end
 
 --- 获取 Token (加密存储; 兼容旧明文的 key)
 function PicacgAuth:getToken()
@@ -26,6 +29,8 @@ end
 
 --- 设置 Token
 function PicacgAuth:setToken(token)
+    self._expired=false
+    clear_favorites()
     if token == nil or token == "" then
         SecretStore.clear(TOKEN_KEY)
         SecretStore.clear("token")
@@ -36,9 +41,11 @@ function PicacgAuth:setToken(token)
     SecretStore.clear("token")
 end
 
+function PicacgAuth:expire()self._expired=true;clear_favorites()end
+
 --- 是否已登录
 function PicacgAuth:isLoggedIn()
-    return self:getToken() ~= nil
+    return not self._expired and self:getToken() ~= nil
 end
 
 --- 登录
@@ -95,6 +102,7 @@ end
 
 --- 退出登录
 function PicacgAuth:logout()
+    self._expired=true;clear_favorites()
     SecretStore.clear(TOKEN_KEY)
     SecretStore.clear("token")
     SecretStore.clear(USERNAME_KEY)

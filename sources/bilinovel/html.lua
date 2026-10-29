@@ -62,7 +62,7 @@ function M.new(ctx,base)
                 if status~=200 then H.fail("network","小说站响应失败",true) end
                 assert(type(r.body)=="string" and #r.body<=2*1024*1024,"response too large")
                 if r.body:find("<title>Just a moment",1,true) then H.unsupported("站点要求浏览器验证") end
-                return r.body
+                return r.body,path
             end
         end
         H.fail("protocol_changed","站点跳转次数异常")
@@ -81,7 +81,7 @@ function M.new(ctx,base)
     local search_routes,route_order={},{}
     function H.search(keyword,page,call)
         local cache_key=keyword.."\0"..page
-        if search_cache and search_cache.key==cache_key and ctx.clock.now()-search_cache.time<120 then return search_cache.html end
+        if search_cache and search_cache.key==cache_key and ctx.clock.now()-search_cache.time<120 then return search_cache.html,search_cache.path end
         local route=page>1 and search_routes[keyword] or nil
         if page>1 and (not route or page>route.pages) then H.fail("invalid_response","搜索分页信息已失效，请重新搜索")end
         if page==1 and last_search and ctx.clock.now()-last_search<5 then
@@ -109,16 +109,16 @@ function M.new(ctx,base)
             if not H.cookies.jieqiSearchTicket then H.unsupported("站点搜索验证尚未完成，请稍后重试") end
         end
         last_search=ctx.clock.now()
-        local html
+        local ok,html,path
         if page>1 then
-            html=H.request(route.stem.."_"..page..".html",call,nil,nil,{Referer=base.."/search.html"})
+            ok,html,path=pcall(H.request,route.stem.."_"..page..".html",call,nil,nil,{Referer=base.."/search.html"})
         else
             local body="searchkey="..H.encode(keyword).."&page="..page
-            html=H.request("/search.html",call,"POST",body,{Referer=base.."/search.html"})
+            ok,html,path=pcall(H.request,"/search.html",call,"POST",body,{Referer=base.."/search.html"})
         end
-        -- Every result page loads the normal search guard again. The ticket
-        -- is consumed by a search request, including a continuation GET.
+        -- A ticket is consumed even when the request fails. Never reuse it.
         H.cookies.jieqiSearchTicket=nil
+        if not ok then error(html,0)end
         if html=="" then
             H.cookies.jieqiSearchTicket=nil
             error(ctx.error("rate_limited","搜索会话失效或请求过于频繁，请稍后重试",nil,nil,true),0)
@@ -130,7 +130,10 @@ function M.new(ctx,base)
             search_routes[keyword]={stem=stem,pages=tonumber(pages)}
             if #route_order>4 then search_routes[table.remove(route_order,1)]=nil end
         end
-        search_cache={key=cache_key,time=ctx.clock.now(),html=html};return html
+        return html,path
+    end
+    function H.rememberSearch(keyword,page,html,path)
+        search_cache={key=keyword.."\0"..page,time=ctx.clock.now(),html=html,path=path}
     end
     -- Only an explicit last-page link proves the full server page range.
     function H.paged(doc,current,items,capacity,number)

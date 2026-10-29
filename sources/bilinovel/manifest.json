@@ -3,7 +3,7 @@
   "name": "哔哩轻小说",
   "author": "PicaYomi contributors",
   "publisher_id": "picayomi.bilinovel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "api_version": 3,
   "min_app_version": "1.1.7",
   "entry": "main.lua",

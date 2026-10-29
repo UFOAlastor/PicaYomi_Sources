@@ -4,6 +4,7 @@ return function(ctx)
     local account=ctx.require("account").new(ctx,H)
     local comments=ctx.require("comments").new(ctx,H,account)
     local last_detail,recommended,script_cache
+    local parse_book
     local S={capabilities={recommendations=true,latest=true,search=true,categories=true,
         local_favorites=true,login=true,favorites=false,comments=true,comment_details=true,replies="none",download=true},
         access={comment_details="login"}}
@@ -67,7 +68,18 @@ return function(ctx)
         return H.run("search",function()
             assert(type(keyword)=="string" and #keyword>0 and #keyword<=512,"invalid search")
             local p=H.page(request)
-            return list(H.search(keyword,p,call),p,false,true)
+            local html,path=H.search(keyword,p,call)
+            local direct=path and path:match("^/novel/(%d+)%.html$")
+            local result
+            if direct then
+                assert(p==1,"unexpected redirected search page")
+                local doc=H.doc(html)
+                local item=parse_book(doc,direct)
+                last_detail={id=direct,time=ctx.clock.now(),html=html}
+                result={items={item},total=1,has_more=false,pagination={mode="page",page=1,pages=1,page_size=1}}
+            else result=list(html,p,false,true)end
+            H.rememberSearch(keyword,p,html,path)
+            return result
         end)
     end
     local categories={{id="0",title="全部"},{id="1",title="电击文库"},{id="2",title="富士见文库"},
@@ -167,29 +179,30 @@ return function(ctx)
         assert(meta(doc,"og:novel:book_name"),"missing detail")
         last_detail={id=id,time=ctx.clock.now(),html=html};return doc
     end
+    parse_book=function(doc,id)
+        local title=meta(doc,"og:novel:book_name");assert(title and title~="","missing title")
+        local categories,seen={},{}
+        local publisher=meta(doc,"og:novel:category")
+        if publisher and publisher~="" then categories[1]=publisher;seen[publisher]=true end
+        for _,tag in ipairs(doc:select(".tag-small a")) do local value=H.text(tag);if value~="" and not seen[value] then categories[#categories+1]=value;seen[value]=true end end
+        local description=H.text(H.first(doc,"#bookSummary content"))
+        if description=="" then description=meta(doc,"og:description") end
+        local out={id=id,title=title,author=meta(doc,"og:novel:author"),categories=categories,
+            description=description,cover=H.url(meta(doc,"og:image")),metadata={}}
+        local status=meta(doc,"og:novel:status")
+        if status=="完结" or status=="已完结" or status=="已完成" then out.finished=true
+        elseif status=="连载" or status=="连载中" then out.finished=false end
+        local updated=meta(doc,"og:novel:update_time")
+        if updated then out.updated_at=updated:match("^(%d%d%d%d%-%d%d%-%d%d)") end
+        for _,node in ipairs(doc:select(".book-meta")) do
+            local text=H.text(node)
+            local words=text:match("^([%d%.]+%s*万字)") or text:match("^([%d,]+%s*字)")
+            if words then out.metadata.word_count=words;break end
+        end
+        return out
+    end
     function S:getManga(id,call)
-        return H.run("getManga",function()
-            local doc=detail(id,call);local title=meta(doc,"og:novel:book_name");assert(title and title~="","missing title")
-            local categories,seen={},{}
-            local publisher=meta(doc,"og:novel:category")
-            if publisher and publisher~="" then categories[1]=publisher;seen[publisher]=true end
-            for _,tag in ipairs(doc:select(".tag-small a")) do local value=H.text(tag);if value~="" and not seen[value] then categories[#categories+1]=value;seen[value]=true end end
-            local description=H.text(H.first(doc,"#bookSummary content"))
-            if description=="" then description=meta(doc,"og:description") end
-            local out={id=id,title=title,author=meta(doc,"og:novel:author"),categories=categories,
-                description=description,cover=H.url(meta(doc,"og:image")),metadata={}}
-            local status=meta(doc,"og:novel:status")
-            if status=="完结" or status=="已完结" or status=="已完成" then out.finished=true
-            elseif status=="连载" or status=="连载中" then out.finished=false end
-            local updated=meta(doc,"og:novel:update_time")
-            if updated then out.updated_at=updated:match("^(%d%d%d%d%-%d%d%-%d%d)") end
-            for _,node in ipairs(doc:select(".book-meta")) do
-                local text=H.text(node)
-                local words=text:match("^([%d%.]+%s*万字)") or text:match("^([%d,]+%s*字)")
-                if words then out.metadata.word_count=words;break end
-            end
-            return out
-        end)
+        return H.run("getManga",function()return parse_book(detail(id,call),id)end)
     end
     function S:getChapters(id,request,call)
         return H.run("getChapters",function()

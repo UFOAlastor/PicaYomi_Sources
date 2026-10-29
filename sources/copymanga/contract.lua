@@ -50,7 +50,7 @@ function V.wrap(ctx,implementation,options)
         local total=tonumber(data.total)
         if options.estimated_total and method=="getComics" then total=nil end
         return true,{items=items,has_more=more,next=more and {page=(tonumber(data.page) or request.page or 1)+1} or nil,
-            total=total},nil
+            total=total,pagination=data.pagination},nil
     end
     function S:init()
         implementation:init()

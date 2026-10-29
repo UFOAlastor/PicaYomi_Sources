@@ -9,7 +9,10 @@ local PicacgAuth = require("auth")
 local PicacgAPI = require("api")
 local Headers = require("headers")
 local HttpClient = ctx.http
-local FavoritesUtil = {markAll=function(data) for _,comic in ipairs(data.comics or {}) do comic.isFavourite=true end end}
+local FavoritesUtil = {markAll=function(data)
+    if type(data)~="table" or type(data.comics)~="table"then return end
+    for _,comic in ipairs(data.comics)do if type(comic)=="table"then comic.isFavourite=true end end
+end}
 
 local PicacgSource = ComicSource:extend{
     name = "哔咔漫画",

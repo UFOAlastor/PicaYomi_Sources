@@ -16,6 +16,9 @@ return function(ctx)
     local function select(doc, query) return doc:select(query) or {} end
     local function text(node) return node and node:textonly():gsub("^%s+", ""):gsub("%s+$", "") or "" end
     local function attr(node, key) return node and node.attributes and node.attributes[key] end
+    -- The recommendation page exceeds the parser's default 1000 iterations.
+    -- Keep the budget local and bounded; never change KOReader's global parser.
+    local function parse(raw) return ctx.html.parse(raw,20000) end
     local function identifier(v)
         assert(type(v) == "string" and v:match("^[%w_%-]+$") and #v <= 160, "平台标识无效")
         return v
@@ -262,8 +265,8 @@ return function(ctx)
         assert(#episodes > 0, "平台没有返回可读章节")
         return { episodes = episodes, page = 1, pages = 1, total = #episodes }
     end
-    function S:parseList(raw, page, per, selector)
-        local doc = ctx.html.parse(raw)
+    function S:parseList(raw, page, per, selector, standalone)
+        local doc = parse(raw)
         local comics, seen = {}, {}
         local metadata={}
         -- Metadata belongs to a card, never to the next work's adjacent link.
@@ -307,12 +310,23 @@ return function(ctx)
             end
         end
         assert(#comics > 0, "列表未找到作品，网站结构可能已变化")
-        local pages = page
+        local pages
+        for _,item in ipairs(select(doc,".page-total"))do
+            local n=tonumber(text(item):match("/%s*(%d+)"))
+            if n then pages=math.max(pages or 0,n)end
+        end
         for _, item in ipairs(select(doc, "li.page-all-item")) do
             local n = tonumber(text(item))
-            if n and n > pages then pages = n end
+            if n then pages=math.max(pages or 0,n)end
         end
-        return { comics = comics, page = page, pages = pages, total = (pages - 1) * per + #comics }
+        -- A short final page supplies the exact count. Earlier pages only
+        -- supply a page bound, never a made-up total using this page's length.
+        if not pages and (standalone or #comics<per)then pages=page end
+        assert(not pages or pages>=page,"列表页码超出范围")
+        local more=pages and page<pages or not pages and #comics==per
+        local pagination=pages and {mode="page",page=page,pages=pages,page_size=per} or nil
+        return {comics=comics,page=page,pages=pages,page_size=per,has_more=more,
+            pagination=pagination,total=not more and ((page-1)*per+#comics) or nil}
     end
     S.getComics = protected(function(self, page)
         page = math.max(1, tonumber(page) or 1)
@@ -330,7 +344,7 @@ return function(ctx)
             {value="datetime_updated",text="最早更新"}, {value="-popular",text="人气"} }
     end
     S.getCategories = protected(function(self)
-        local doc = ctx.html.parse(self:get("/filter"))
+        local doc = parse(self:get("/filter"))
         local categories, seen = {}, {}
         for _, a in ipairs(select(doc, "a[href]")) do
             local id = (attr(a,"href") or ""):match("^/comics%?theme=([%w_%-]+)$")
@@ -348,7 +362,7 @@ return function(ctx)
         page = math.max(1, tonumber(page) or 1)
         sort = sort or "-datetime_updated"
         assert(sort=="-datetime_updated" or sort=="datetime_updated" or sort=="-popular", "分类排序无效")
-        local doc = ctx.html.parse(self:get("/comics?theme=" .. identifier(category) .. "&ordering=" .. sort
+        local doc = parse(self:get("/comics?theme=" .. identifier(category) .. "&ordering=" .. sort
             .. "&offset=" .. (page-1)*50 .. "&limit=50"))
         local box = select(doc, ".exemptComic-box")[1]
         local total = tonumber(attr(box,"total"))
@@ -382,17 +396,18 @@ return function(ctx)
         return types
     end
     S.getRankings = protected(function(self, rank, page)
-        assert((tonumber(page) or 1)==1, "网站排行榜只有一页")
+        page=math.max(1,tonumber(page) or 1)
         local audience, period = str(rank):match("^(%a+)_(%a+)$")
         assert((audience=="male" or audience=="female") and
             (period=="day" or period=="week" or period=="month" or period=="total"), "排行榜类型无效")
-        local data = self:parseList(self:get("/rank?type="..audience.."&table="..period), 1, 50, ".ranking-all")
-        data.pages, data.total = 1, #data.comics
+        local path="/rank?type="..audience.."&table="..period
+        if page>1 then path=path.."&offset="..(page-1)*50 .."&limit=50" end
+        local data = self:parseList(self:get(path), page, 50, ".ranking-all",page==1)
         return data
     end)
     S.getRecommendations = protected(function(self, page)
         assert((tonumber(page) or 1) == 1, "推荐区只有一页")
-        local doc = ctx.html.parse(self:get("/"))
+        local doc = parse(self:get("/"))
         local comics, seen = {}, {}
         for _, section in ipairs(select(doc, "div.container")) do
             local heading = text(select(section, ".index-all-icon-left-txt")[1]):gsub("%s+", "")
@@ -439,7 +454,7 @@ return function(ctx)
     end)
     S.getComicDetail = protected(function(self, id)
         local raw = self:get("/comic/" .. identifier(id))
-        local doc = ctx.html.parse(raw)
+        local doc = parse(raw)
         local title = text(select(doc, "h6")[1])
         assert(title ~= "", "详情结构已变化")
         local image = select(doc, "img[data-src]")[1]
@@ -485,7 +500,7 @@ return function(ctx)
             local token = assert(self:getToken(), "请先登录")
             -- The public path_word remains our data identity; the website's
             -- collect action takes a distinct UUID supplied by its detail page.
-            local doc = ctx.html.parse(self:get("/comic/" .. identifier(id)))
+            local doc = parse(self:get("/comic/" .. identifier(id)))
             local button = assert(select(doc,".collect")[1], "网站未返回收藏操作")
             local uuid = identifier(assert((attr(button,"onclick") or ""):match(
                 "^%s*collect%s*%(%s*['\"]([%w_%-]+)['\"]%s*%)%s*;?%s*$"), "收藏标识结构已变化"))
@@ -510,7 +525,7 @@ return function(ctx)
     end
     function S:webChapters(id)
         local raw = self:get("/comic/" .. identifier(id))
-        local doc = ctx.html.parse(raw)
+        local doc = parse(raw)
         local dnt = attr(select(doc, "#dnt")[1], "value") or "2"
         local data = json(self:get("/comicdetail/" .. id .. "/chapters", { dnts = dnt }))
         local result = decrypt(data.results, key(raw))
