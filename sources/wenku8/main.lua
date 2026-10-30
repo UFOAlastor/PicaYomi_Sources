@@ -2,14 +2,14 @@ return function(ctx)
     local H=ctx.require("html").new(ctx)
     local account=ctx.require("account").new(ctx,H)
     local comments=ctx.require("comments").new(ctx,H)
-    local favorite_cache,favoriteState
+    local favorite_cache,favorite_pages,favoriteState
     local S={capabilities={recommendations=true,latest=true,search=true,categories=true,
         login=true,favorites=true,local_favorites=true,download=true,comments=true,comment_details=true,replies="paged"},
         access={recommendations="login",latest="login",search="login",favorites="login"}}
     function S:init() account.restore();return true,{success=true},nil end
     function S:getSession()return true,{logged_in=account.logged()},nil end
-    function S:login(username,password,call)favorite_cache=nil;return H.run("login",account.login,username,password,call)end
-    function S:logout()favorite_cache=nil;return H.run("logout",account.logout)end
+    function S:login(username,password,call)favorite_cache=nil;favorite_pages=nil;return H.run("login",account.login,username,password,call)end
+    function S:logout()favorite_cache=nil;favorite_pages=nil;return H.run("logout",account.logout)end
     function S:getUserProfile(call)return H.run("getUserProfile",account.profile,call)end
     function S:getComments(id,request,call)return H.run("getComments",comments.list,id,request,call)end
     function S:getCommentDetails(id,rid,call)return H.run("getCommentDetails",comments.details,id,rid,call)end
@@ -246,7 +246,36 @@ return function(ctx)
     function S:getFavorites(request,call)
         return H.run("getFavorites",function()
             account.profile(call);local p=H.page(request)
-            local result,records=shelf(H.get("/modules/article/bookcase.php?page="..p,call),p)
+            local function fetch(n)return shelf(H.get('/modules/article/bookcase.php?page='..n,call),n)end
+            if p==1 or not favorite_pages or ctx.clock.now()-favorite_pages.time>=60 then
+                local first,records=fetch(1)
+                local last,tail=first,nil
+                -- Usually the server gives an explicit last-page link. For a
+                -- short pager, follow only its actual continuation to prove it.
+                for _=1,200 do
+                    if last.pagination then break end
+                    assert(last.has_more and last.next,'missing shelf continuation')
+                    local n=H.page(last.next)
+                    last=fetch(n);tail={page=n,result=last}
+                end
+                assert(last.pagination,'shelf end was not confirmed')
+                favorite_pages={time=ctx.clock.now(),pages=last.pagination.pages,
+                    first=first,records=records,tail=tail}
+            end
+            local pages=favorite_pages.pages
+            assert(p<=pages,'shelf page outside confirmed range')
+            local physical=pages-p+1
+            local result,records
+            if physical==1 then result,records=favorite_pages.first,favorite_pages.records
+            elseif favorite_pages.tail and favorite_pages.tail.page==physical then result=favorite_pages.tail.result
+            else result,records=fetch(physical)end
+            if result.pagination and result.pagination.pages~=pages then
+                favorite_pages=nil;H.fail('invalid_response','书架分页已变化，请返回第一页刷新',true)
+            end
+            local items={}
+            for i=#result.items,1,-1 do items[#items+1]=result.items[i]end
+            result={items=items,has_more=p<pages,next=p<pages and {page=p+1} or nil,
+                pagination={mode='page',page=p,pages=pages,page_size=math.max(20,#items)}}
             if p==1 and not result.has_more then
                 local ids={};for _,item in ipairs(result.items) do ids[item.id]=true end
                 favorite_cache={time=ctx.clock.now(),ids=ids,records=records,pages={}}
@@ -270,7 +299,7 @@ return function(ctx)
     end
     function S:addFavorite(id,call)
         return H.run("addFavorite",function()
-            account.profile(call);favorite_cache=nil
+            account.profile(call);favorite_cache=nil;favorite_pages=nil
             local html=H.get("/modules/article/addbookcase.php?bid="..H.id(id),call)
             assert(html:find("成功",1,true) or html:find("已经",1,true),"collection was not confirmed")
             assert(favoriteState(id,call),"collection addition was not confirmed")
@@ -292,7 +321,7 @@ return function(ctx)
             end
             if not record then H.fail("not_found","当前书架没有这本小说；未执行删除") end
             assert(record:match("^%d+$"),"invalid collection record identity")
-            favorite_cache=nil
+            favorite_cache=nil;favorite_pages=nil
             local result=H.get("/modules/article/bookcase.php?page="..found_page.."&delid="..record,call)
             assert(not result:find("错误原因",1,true),"collection deletion failed")
             -- The delete response is the server-rendered resulting shelf.

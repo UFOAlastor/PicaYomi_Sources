@@ -1,10 +1,13 @@
 -- Public review previews and lazy original-post loading, no write endpoints.
 local M={}
-function M.new(ctx,H,account)
+function M.new(ctx,H,account,account_http)
+    account_http=account_http or H
     local C={}
     local function path(a)
         local href=ctx.text.htmlEntitiesToUtf8(H.attr(a,"href"))
-        if href:sub(1,#H.base)==H.base then href=href:sub(#H.base+1) end
+        for _,base in ipairs({H.base,account_http.base})do
+            if href:sub(1,#base)==base then href=href:sub(#base+1);break end
+        end
         return href
     end
     local function belongs(doc,id)
@@ -41,7 +44,7 @@ function M.new(ctx,H,account)
     end
     function C.details(id,rid,call)
         H.id(id);H.id(rid);account.requireLogin()
-        local doc=H.doc(H.get("/reviewshow_"..rid.."_1.html",call));belongs(doc,id)
+        local doc=H.doc(account_http.get("/reviewshow_"..rid.."_1.html",call));belongs(doc,id)
         local body=assert(H.first(doc,".book-comment-p"),"missing original post")
         local row=body.parent
         local author=H.text(H.first(row,".book-meta-l em"));assert(author~="","missing author")

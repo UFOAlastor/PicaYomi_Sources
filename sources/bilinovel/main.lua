@@ -1,8 +1,12 @@
 return function(ctx)
-    local H=ctx.require("html").new(ctx,"https://www.bilinovel.com")
+    -- Public pages moved together. Keep the original account origin and its
+    -- stored cookies separate; a public migration never moves credentials.
+    local H=ctx.require("html").new(ctx,"https://www.bilinovel.net")
+    local account_http=ctx.require("html").new(ctx,"https://www.bilinovel.com")
+    local search_http=ctx.require("html").new(ctx,"https://www.bilinovel.net")
     local D=ctx.require("decoder")
-    local account=ctx.require("account").new(ctx,H)
-    local comments=ctx.require("comments").new(ctx,H,account)
+    local account=ctx.require("account").new(ctx,account_http)
+    local comments=ctx.require("comments").new(ctx,H,account,account_http)
     local last_detail,recommended,script_cache
     local parse_book
     local S={capabilities={recommendations=true,latest=true,search=true,categories=true,
@@ -68,7 +72,7 @@ return function(ctx)
         return H.run("search",function()
             assert(type(keyword)=="string" and #keyword>0 and #keyword<=512,"invalid search")
             local p=H.page(request)
-            local html,path=H.search(keyword,p,call)
+            local html,path=search_http.search(keyword,p,call)
             local direct=path and path:match("^/novel/(%d+)%.html$")
             local result
             if direct then
@@ -78,7 +82,7 @@ return function(ctx)
                 last_detail={id=direct,time=ctx.clock.now(),html=html}
                 result={items={item},total=1,has_more=false,pagination={mode="page",page=1,pages=1,page_size=1}}
             else result=list(html,p,false,true)end
-            H.rememberSearch(keyword,p,html,path)
+            search_http.rememberSearch(keyword,p,html,path)
             return result
         end)
     end
@@ -263,6 +267,9 @@ return function(ctx)
         for _,script in ipairs(doc:select("script")) do
             local url=H.attr(script,"src")
             if url:find("chapterlog.js",1,true) then
+                -- The official page also names the .net asset mirror. Fetch
+                -- its exact script path through our existing same-origin route.
+                url=url:match("^https://www%.bilinovel%.net(/.*)$") or url
                 if url:sub(1,#H.base)==H.base then url=url:sub(#H.base+1) end
                 assert(url:match("^/themes/zhmb/js/chapterlog%.js%?[%w%.=_%-]+$"),"unknown chapter script origin")
                 path=url

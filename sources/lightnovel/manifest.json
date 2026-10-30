@@ -1,0 +1,15 @@
+{
+  "id": "lightnovel",
+  "name": "轻之国度",
+  "author": "PicaYomi contributors",
+  "publisher_id": "picayomi.lightnovel",
+  "version": "0.2.4",
+  "api_version": 3,
+  "min_app_version": "1.2.13",
+  "entry": "main.lua",
+  "content_type": "novel",
+  "identity_policy": "stable",
+  "data_schema_version": 1,
+  "cache_schema_version": 1,
+  "text_filters": []
+}

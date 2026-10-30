@@ -110,6 +110,7 @@ v3 没有 ctx.host、ctx.base、ctx.module；通过 `ctx.require("api")` 导入�
 | ctx.text / ctx.translate | htmlToPlainText/htmlEntitiesToUtf8/template；翻译函数，无宿主窗口 |
 | ctx.cookie | Cookie 解析、合并和请求头序列化，不负责跨源转发 |
 | ctx.clock | 点调用 now() 墙钟秒、timestamp() 整数时间戳 |
+| ctx.tasks | 宿主1.2.13起，点调用 map(functions,concurrency)：至多200个任务、最多3条协作通道，按输入顺序返回单值结果；网络仍使用ctx.http。继承取消/期限与节流预留，低内存使用串行已有通道，任何失败停止并回收同组任务；不得嵌套并行或自行开进程。完整目录仍须全部验证成功才发布 |
 | ctx.logger / ctx.redact / ctx.trace | 脱敏日志与最小诊断；作者仍不应传入个人响应或秘密 |
 | ctx.error / ctx.imageRequest | 错误构造；imageRequest(resource,headers,timeout) 返回成功 GET 三元组 |
 
@@ -132,3 +133,7 @@ ImageRequest 为 `{url,method="GET",headers={},timeout?}`：仅 HTTP(S)，不接
 ## 诊断日志（宿主 0.11.2 起）
 
 `ctx.logger.enabled` 与 `ctx.trace.enabled` 为宿主进程启动时确定的布尔值。发布默认关闭 info/dbg 与 trace；源应在调用前检查开关，跳过字符串拼接和格式化。warn/err 保留；日志不能包含账号、密码、会话或完整响应。使用该门控接口的源声明 min_app_version 至少 0.11.2；旧源仍可调用日志，但其预先计算参数的成本无法由宿主取消。
+
+### 原生小说阅读与下载用途（宿主 1.2.11）
+
+宿主传给原生小说 `getChapterContent` 的 call 新增 `purpose="reading"` 或 `purpose="download"`，用于站点区分在线阅读和批量下载授权。普通源可忽略；依赖该字段执行权限检查的源必须声明最低宿主1.2.11，并拒绝缺失/未知用途。下载授权不能用公开正文可读替代；已有缓存的离线重开不发新请求。该字段不进入目录next、离线清单或凭据。
