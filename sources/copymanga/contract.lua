@@ -37,7 +37,8 @@ function V.wrap(ctx,implementation,options)
         local replies
         if type(v.replies)=="table" then replies={}; for i,r in ipairs(v.replies) do replies[i]=comment(r) end end
         return {id=identifier(v._id),content=v.content or "",author=copy(v.author) or {name="未知用户"},
-            created_at=v.created_at,likesCount=v.likesCount,repliesCount=v.repliesCount,replies=replies}
+            created_at=v.created_at,content_complete=v.content_complete,
+            likesCount=v.likesCount,repliesCount=v.repliesCount,replies=replies}
     end
     local function list(method,request,...)
         request=request or {}
@@ -171,7 +172,8 @@ function V.wrap(ctx,implementation,options)
             if not ok then return false,nil,err end
             local items={};for i,item in ipairs(data[key]) do items[i]=comment(item) end
             local page=tonumber(data.page) or 1;local more=page<(tonumber(data.pages) or 1)
-            return true,{items=items,has_more=more,next=more and {page=page+1} or nil,total=tonumber(data.total)},nil
+            return true,{items=items,has_more=more,next=more and {page=page+1} or nil,
+                total=tonumber(data.total),pagination=data.pagination},nil
         end
     end
     return S

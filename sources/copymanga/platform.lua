@@ -6,7 +6,8 @@ return function(ctx)
     local S = require("object"):extend{
         capabilities = { login = true, requires_login = false, recommendations = true,
             latest = true, search = true, categories = true, rankings = true,
-            download = true, local_favorites = true, favorites = true },
+            download = true, local_favorites = true, favorites = true,
+            comments = true, replies = "none" },
         access = { favorites = "login" },
     }
     local function str(v) return type(v) == "string" and v or "" end
@@ -220,6 +221,72 @@ return function(ctx)
         assert(data.code == 200 and type(data.results) == "table", "App API 响应无效")
         return data.results
     end
+    -- Book comments are public App requests. Website credentials never cross
+    -- this boundary; the ordinary compatibility API does not serve comments.
+    local comment_books,comment_order,comment_scope={},{},nil
+    function S:commentAPI()
+        local base=ctx.getSetting("comment_api_base_url","https://mapi.copy20.com"):gsub("/+$","")
+        assert(base:match("^https://[%w%.%-]+$"),"评论 API 地址必须为 HTTPS 域名")
+        return base
+    end
+    S.getComments=protected(function(self,id,page)
+        id=identifier(id);page=tonumber(page)or 1
+        assert(page>=1 and page%1==0 and page<=1000000,"评论页码无效")
+        local base=self:commentAPI()
+        local scope=self:baseURL().."|"..self:apiBaseURL().."|"..base
+        if scope~=comment_scope then comment_books,comment_order,comment_scope={},{},scope end
+        local now=ctx.clock.now()
+        local entry=comment_books[id]
+        if not entry or now<entry.at or now-entry.at>300 then
+            local detail=self:api("/api/v3/comic2/"..id.."?platform=3")
+            local comic=detail.comic
+            assert(detail.is_lock~=true and type(comic)=="table" and comic.path_word==id,
+                "作品评论身份核验失败，请重新打开详情")
+            assert(comic.close_comment~=true,"该作品已关闭评论")
+            local uuid=identifier(comic.uuid)
+            entry={uuid=uuid,at=now};comment_books[id]=entry
+            for i=#comment_order,1,-1 do if comment_order[i]==id then table.remove(comment_order,i)end end
+            comment_order[#comment_order+1]=id
+            if #comment_order>16 then comment_books[table.remove(comment_order,1)]=nil end
+        end
+        local offset=(page-1)*10
+        local headers={ ["User-Agent"]="COPY/3.0.0",version="3.0.9",source="copyApp",
+            referer="com.copymanga.app-3.0.0",region="1",webp="1",accept="application/json" }
+        local response=ctx.http:get(base.."/api/v3/comments?comic_id="..encode(entry.uuid)
+            .."&limit=10&offset="..offset,headers,20)
+        assert(response,"评论网络请求失败，请稍后重试")
+        assert(response.status_code~=429,"评论访问过于频繁，请稍后重试")
+        assert(response.status_code==200,"作品评论暂不可访问，请稍后重试")
+        assert(type(response.body)=="string" and #response.body>0 and #response.body<=1024*1024,
+            "评论响应大小无效")
+        local data=json(response.body)
+        assert(data.code==200 and type(data.results)=="table","评论请求失败，请稍后重试")
+        local result=data.results
+        local total=tonumber(result.total)
+        assert(total and total>=0 and total%1==0 and total<=10000000
+            and tonumber(result.offset)==offset and tonumber(result.limit)==10
+            and type(result.list)=="table","评论分页结构已变化")
+        local pages=math.max(1,math.ceil(total/10))
+        assert(page<=pages,"评论页码已变化，请从首页重新加载")
+        local count=#result.list
+        assert(count==math.max(0,math.min(10,total-offset)),"评论列表未完整返回")
+        for k in pairs(result.list)do assert(type(k)=="number"and k>=1 and k<=count and k%1==0,
+            "评论列表结构已变化")end
+        local comments,seen={},{}
+        for _,item in ipairs(result.list)do
+            assert(type(item)=="table" and (type(item.id)=="string"or type(item.id)=="number")
+                and type(item.comment)=="string"and #item.comment<=262144,"评论条目结构已变化")
+            local cid=tostring(item.id)
+            assert(cid~="" and #cid<=512 and not seen[cid],"评论标识无效或重复")
+            seen[cid]=true
+            local created=item.create_at
+            if type(created)~="number"and type(created)~="string"then created=nil end
+            comments[#comments+1]={_id=cid,content=item.comment,content_complete=true,
+                author={name=str(item.user_name)},created_at=created}
+        end
+        return {comments=comments,total=total,page=page,pages=pages,
+            pagination={mode="page",page=page,pages=pages,page_size=10}}
+    end)
     function S:apiChapters(id)
         local detail = self:api("/api/v3/comic2/" .. identifier(id) .. "?platform=3")
         assert(detail.is_lock ~= true, "该作品需要平台授权访问")
