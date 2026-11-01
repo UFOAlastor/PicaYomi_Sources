@@ -3,7 +3,7 @@
   "name": "轻之国度",
   "author": "PicaYomi contributors",
   "publisher_id": "picayomi.lightnovel",
-  "version": "0.2.4",
+  "version": "1.0.0",
   "api_version": 3,
   "min_app_version": "1.2.13",
   "entry": "main.lua",
