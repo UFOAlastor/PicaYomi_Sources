@@ -83,6 +83,7 @@ local function http_get(http_client, url, timeout)
     if not resp then
         return nil, "网络请求失败: " .. tostring(err)
     end
+    if resp.status_code==401 then require("auth"):logout()end
     if resp.status_code and resp.status_code >= 400 then
         return nil, "HTTP " .. tostring(resp.status_code)
     end

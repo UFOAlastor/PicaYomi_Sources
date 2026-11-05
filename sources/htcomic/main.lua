@@ -10,5 +10,5 @@ return function(ctx)
         normalized.url = headers:normalizeImageUrl(resource.url)
         return get_image_request(self, normalized, ...)
     end
-    return source
+    return ctx.accounts.wrap(source)
 end

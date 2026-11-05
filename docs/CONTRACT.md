@@ -104,6 +104,8 @@ v3 没有 ctx.host、ctx.base、ctx.module；通过 `ctx.require("api")` 导入�
 | ctx.values | str/num/bool/list/str_list，带缺省值的 JSON 字段读取辅助 |
 | ctx.aes / ctx.b64 / ctx.hmac / ctx.hashes | 通用加解密/编码；hashes 的 md5/sha256 返回十六进制字符串，不包含平台协议常量 |
 | ctx.config | 冒号 get(key,default)/set(key,value)，按源隔离；历史源由宿主映射已授权旧键 |
+| ctx.accounts.wrap(source) | 1.5.3 起，返回统一登录恢复包装：仅明确 auth_expired 的只读请求重登一次并重放一次，凭据存源隔离加密服务；写操作不重放，退出清除，恢复限时和冷却各 30 秒。源需提供 login/logout/getSession；声明最低宿主 1.5.3。 |
+| ctx.isForceRefresh() | 1.5.3 起，当前请求是否为手动强制刷新；有额外内存或配置快照的源据此绕过旧缓存。 |
 | ctx.secrets | 点调用 get/set/clear/get_json/set_json(key,...)，宿主加密保存 |
 | ctx.cache | 冒号 getData/cacheData/clear/clearPattern，按源与 cache_schema_version 隔离；cacheData 第三参数为到期时间戳 |
 | ctx.getSetting | 点调用 (key,default) 读取用户文本设置，凭据不放 settings |

@@ -398,6 +398,7 @@ local function request(method, path, body, timeout, extra_headers, max_attempts)
                 return nil, "响应不是 JSON", false
             end
             if parsed.code ~= 200 then
+                if path=="/login" and ctx.accountRecoveryManaged then return nil,ctx.error("auth_required","账号登录被拒绝，请重新登录"),false end
                 return nil, parsed.errorMsg or parsed.msg or ("code=" .. tostring(parsed.code)), false
             end
             local data
@@ -455,6 +456,7 @@ function Api.get(path, timeout)
 
     -- 401 一律尝试用磁盘凭据恢复会话:
     -- 进程刚启动时 logged_in 必为 false, 但凭据可能是有效的。
+    if not data and err and tostring(err):find("401",1,true) and ctx.accountRecoveryManaged then Api.logout();return nil,_("登录已过期，请重新登录") end
     if not data and err and tostring(err):find("401", 1, true) and Api.hasSavedCredentials() then
         if logger.enabled then logger.info("Picayomi SourceB: 收到 401, 尝试用已保存凭据重新登录") end
         if Api.reLogin() then
@@ -488,6 +490,7 @@ function Api.post(path, body, timeout, no_retry)
     if path == "/login" then return nil, err end
 
     if err and tostring(err):find("401", 1, true) then
+        if ctx.accountRecoveryManaged then Api.logout();return nil,_("登录已过期，请重新登录") end
         if Api.hasSavedCredentials() then
             if logger.enabled then logger.info("Picayomi SourceB: 写操作收到 401, 尝试用已保存凭据重新登录") end
             if Api.reLogin() then
@@ -841,14 +844,15 @@ local function savedCategories(snapshot)
 end
 
 function Api.getCategories()
-    local hit = cacheGet(CATEGORY_CACHE_KEY)
+    local force=ctx.isForceRefresh and ctx.isForceRefresh()
+    local hit = not force and cacheGet(CATEGORY_CACHE_KEY)
     if hit then return hit end
 
     -- 分类变化很少, 重启后优先复用磁盘快照, 不必再承担一次域名发现/网络请求。
     local snapshot = config:get(CATEGORY_SNAPSHOT_KEY)
     local saved = savedCategories(snapshot)
     local remaining = saved and ((tonumber(snapshot.expires_at) or 0) - os.time()) or 0
-    if remaining > 0 then
+    if remaining > 0 and not force then
         cacheSet(CATEGORY_CACHE_KEY, saved, remaining)
         return saved
     end
@@ -1088,7 +1092,7 @@ function Api.login(username, password)
     -- 凭据落盘: 源 B 的 Cookie 有效期很短, 需要能自动重新登录。
     -- **只走 SecretStore** —— config.json 里不允许出现明文密码/账号。
     SecretStore.set("jm_account", username)
-    SecretStore.set("jm_password", password)
+    if ctx.accountRecoveryManaged then SecretStore.clear("jm_password") else SecretStore.set("jm_password", password) end
     -- 标记"这份 Cookie 是登录后保存的": 匿名浏览也会下发 Cookie, 不能只看
     -- Cookie 非空就判定已登录 (见 Api.hasSavedSession)。
     config:set("jm_session", true)

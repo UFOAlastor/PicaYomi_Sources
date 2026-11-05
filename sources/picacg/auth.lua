@@ -103,7 +103,7 @@ function PicacgAuth:login(username, password, http_client, headers, recovery)
             self:setToken(token,true)
             -- 账号名也是 PII, 不写明文
             SecretStore.clear(PASSWORD_KEY)
-            if SecretStore.set(USERNAME_KEY, username) then SecretStore.set(PASSWORD_KEY, password) end
+            if SecretStore.set(USERNAME_KEY, username) and not ctx.accountRecoveryManaged then SecretStore.set(PASSWORD_KEY, password) end
             if logger.enabled then logger.info("Picayomi SourceAAuth: 登录成功") end
             return true
         end
@@ -113,6 +113,9 @@ function PicacgAuth:login(username, password, http_client, headers, recovery)
     if recovery and (tonumber(response.status_code)==401 or tonumber(data.code)==401 or tonumber(data.code)==400) then
         SecretStore.clear(PASSWORD_KEY);self:expire()
         return nil,"自动登录失败，请重新登录并输入账号密码"
+    end
+    if ctx.accountRecoveryManaged and (tonumber(data.code)==400 or tonumber(data.code)==401) then
+        return nil,ctx.error("auth_required","账号或密码已失效，请重新登录")
     end
     logger.err("Picayomi SourceAAuth: 登录失败: " .. msg)
     return nil, msg
@@ -169,7 +172,7 @@ function PicacgAuth:getUserProfile(http_client, headers, recovered)
     local data = http_client:parseJsonResponse(response)
     if epoch~=(self._epoch or 0) then return nil,"登录状态已改变，请重试" end
     if tonumber(response.status_code)==401 or data and tonumber(data.code)==401 then
-        if not recovered then
+        if not recovered and not ctx.accountRecoveryManaged then
             local ok,err=self:recover(http_client,headers,token,epoch)
             if ok then return self:getUserProfile(http_client,headers,true)end
             return nil,err

@@ -34,7 +34,7 @@ function A.new(ctx,H)
         local saved=ctx.secrets.get_json("session")
         state=valid(saved) and saved or nil
         H.cookies=state and state.cookies or {}
-        H.expire=clear
+        H.expire=clear;H.logged=self.logged
     end
     function self.logged() return valid(state)==true end
     function self.requireLogin()

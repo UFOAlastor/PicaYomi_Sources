@@ -332,5 +332,5 @@ return function(ctx)
         end)
     end
     function S:getImageRequest(resource)return ctx.imageRequest(resource,{Referer=H.base.."/"},20)end
-    return S
+    return ctx.accounts.wrap(S)
 end

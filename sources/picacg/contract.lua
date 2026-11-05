@@ -15,6 +15,7 @@ function V.wrap(ctx,implementation,options)
         local out={}; for k,item in pairs(v) do out[k]=copy(item) end; return out
     end
     local function failure(err,code)
+        if type(err)=="table" and err.code and err.message then return false,nil,err end
         return false,nil,ctx.error(code or "network",type(err)=="string" and err or "平台请求失败",nil,nil,false)
     end
     local function fetch(method,...)
@@ -140,8 +141,8 @@ function V.wrap(ctx,implementation,options)
         implementation:setToken(token);return true,{success=true},nil
     end
     function S:login(...)
-        local ok,err=implementation:login(...)
-        if not ok then return failure(err) end
+        local ok,err,code=implementation:login(...)
+        if not ok then return failure(err,code) end
         return true,{success=true},nil
     end
     function S:logout() implementation:logout();return true,{success=true},nil end

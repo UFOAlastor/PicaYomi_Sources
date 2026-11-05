@@ -58,7 +58,11 @@ function M.new(ctx)
                 assert(location:match("^/[^/]"),"unexpected cross-origin redirect")
                 path,method,body=location,"GET",nil
             else
-                if status==401 then H.fail("auth_required","请先登录轻小说文库") end
+                if status==401 then
+                    local code=H.logged and H.logged() and "auth_expired" or "auth_required"
+                    if H.expire then H.expire()end
+                    H.fail(code,"登录已过期，请重新登录")
+                end
                 if status==404 then H.fail("not_found","小说或章节不存在") end
                 if status==429 then
                     local wait=tonumber(r.headers and (r.headers["retry-after"] or r.headers["Retry-After"]))
@@ -79,8 +83,9 @@ function M.new(ctx)
         local closed_template=html:find("本站正式关闭",1,true) and html:find("2009.03.16-2015.12.24",1,true)
         local login_error=html:find("错误原因",1,true) and (html:find("请先登录",1,true) or html:find("请您先登录",1,true))
         if closed_template or login_error then
+            local code=H.logged and H.logged() and "auth_expired" or "auth_required"
             if H.expire then H.expire() end
-            H.fail("auth_required","轻小说文库此功能需要登录个人账号")
+            H.fail(code,"轻小说文库此功能需要登录个人账号")
         end
         if html:find("两次搜索的间隔时间",1,true) then H.fail("rate_limited","站点要求两次搜索至少间隔 5 秒",true) end
         return html

@@ -56,7 +56,11 @@ function M.new(ctx,base)
                 path,method,body=location,"GET",nil
             else
                 if status==403 then H.unsupported("站点要求浏览器验证，当前源无法访问") end
-                if status==401 then H.fail("auth_required","当前内容需要登录") end
+                if status==401 then
+                    local code=H.logged and H.logged() and "auth_expired" or "auth_required"
+                    if H.expire then H.expire()end
+                    H.fail(code,"登录已过期，请重新登录")
+                end
                 if status==404 then H.fail("not_found","内容不存在") end
                 if status==429 then H.fail("rate_limited","站点请求过于频繁",true) end
                 if status~=200 then H.fail("network","小说站响应失败",true) end

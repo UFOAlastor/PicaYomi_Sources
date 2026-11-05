@@ -38,7 +38,7 @@ function PicacgAPI:request(http_client, headers, auth, method, path, body, no_re
     local epoch=auth._epoch or 0
     local function unauthorized()
         if epoch~=(auth._epoch or 0)then return nil,"登录状态已改变，请重试"end
-        if not recovered and not no_retry and auth.recover then
+        if not ctx.accountRecoveryManaged and not recovered and not no_retry and auth.recover then
             local ok,err=auth:recover(http_client,headers,token,epoch)
             if ok then return self:request(http_client,headers,auth,method,path,body,no_retry,true)end
             return nil,err

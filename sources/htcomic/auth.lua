@@ -8,9 +8,8 @@ local ctx = assert(ctx, "source SDK context required")
 -- 重要边界:
 --   * 浏览/搜索/阅读**不需要登录** —— 登录只影响收藏夹 (requires_login = false,
 --     见 source/htcomic/init.lua 的 capabilities)。所以首页不会因为未登录被拦住。
---   * **不落盘密码**。只存站点给的会话 Cookie 和用户名 (与 util/config.lua 的
---     注释同一个约定: 记住登录靠可撤销的 token/cookie, 不是密码)。
---   * 会话过期时, 下一次请求会变成匿名 —— 表现为"收藏突然没了", 重新登录即可。
+--   * 本模块维护 Cookie 与账号名；宿主统一策略通过加密存储保存重登凭据。
+--   * 明确会话失效由宿主恢复一次；退出登录清除会话和重登凭据。
 
 local Headers = require("headers")
 local SecretStore = ctx.secrets
@@ -73,13 +72,14 @@ function HtAuth:login(username, password)
         return false, _("网络请求失败")
     end
     if resp.status_code and resp.status_code >= 400 then
-        return false, "HTTP " .. tostring(resp.status_code)
+        return false, "HTTP " .. tostring(resp.status_code),
+            (resp.status_code==400 or resp.status_code==401) and "auth_required" or resp.status_code==429 and "rate_limited" or "network"
     end
 
     local text = tostring(resp.body or "")
     local ok, data = pcall(json.decode, text)
     if not ok or type(data) ~= "table" then
-        logger.warn("Picayomi HtAuth: 登录返回不是 JSON: " .. text:sub(1, 120))
+        logger.warn("Picayomi HtAuth: 登录返回不是有效 JSON")
         return false, _("登录失败（返回格式异常）")
     end
 
@@ -87,7 +87,7 @@ function HtAuth:login(username, password)
         -- 站点给的文案是繁体, 直接透出比"登录失败"有用
         local msg = plain_text(data.html)
         if logger.enabled then logger.info("Picayomi HtAuth: 登录被拒绝: " .. msg) end
-        return false, msg ~= "" and msg or _("用户名或密码错误")
+        return false, msg ~= "" and msg or _("用户名或密码错误"), "auth_required"
     end
 
     local got_cookie = Headers:mergeSetCookie(resp.headers and resp.headers["set-cookie"])

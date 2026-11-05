@@ -210,5 +210,5 @@ return function(ctx)
         return {format='html',html=html,base_url=base..'/reader/'..bid..'/'..cid,complete=true}
     end)end
     function S:getImageRequest(resource)return ctx.imageRequest(resource,{Referer=base..'/'},20)end
-    return S
+    return ctx.accounts.wrap(S)
 end

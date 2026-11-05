@@ -167,10 +167,10 @@ return function(ctx)
         if response.status_code == 401 or ok and tonumber(data.code) == 401 then
             -- Do not discard an existing session after a failed attempt to log into another account.
             if token and token == self:getToken() then self:logout() end
-            return nil, "登录已过期，请重新登录"
+            return nil, token and "登录已过期，请重新登录" or ctx.error("auth_required","账号登录被拒绝，请重新登录")
         end
         if ok and tonumber(data.code) == 210 then
-            return nil, "平台拒绝登录 (code 210)，请在官网确认账号及访问限制"
+            return nil, ctx.error("auth_required","平台拒绝登录 (code 210)，请在官网确认账号及访问限制")
         end
         if not ok or response.status_code ~= 200 then
             return nil, "账号接口响应无效 (HTTP " .. tostring(response.status_code) .. ")"
