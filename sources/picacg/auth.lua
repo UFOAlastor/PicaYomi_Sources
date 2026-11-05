@@ -13,6 +13,7 @@ local PicacgAuth = {}
 local CONFIG_PREFIX = "source.picacg"
 local TOKEN_KEY = CONFIG_PREFIX .. ".token"
 local USERNAME_KEY = CONFIG_PREFIX .. ".username"
+local PASSWORD_KEY = CONFIG_PREFIX .. ".password"
 local function clear_favorites()
     if ctx.cache and ctx.cache.clearPattern then ctx.cache:clearPattern("picacg_favs_")end
 end
@@ -28,7 +29,11 @@ function PicacgAuth:getToken()
 end
 
 --- 设置 Token
-function PicacgAuth:setToken(token)
+function PicacgAuth:setToken(token, internal)
+    if not internal then
+        self._epoch=(self._epoch or 0)+1;self._refreshing=nil
+        SecretStore.clear(PASSWORD_KEY)
+    end
     self._expired=false
     clear_favorites()
     if token == nil or token == "" then
@@ -54,10 +59,14 @@ end
 -- @param http_client: HttpClient 实例
 -- @param headers: Headers 模块
 -- @return: true 或 nil, err
-function PicacgAuth:login(username, password, http_client, headers)
+function PicacgAuth:login(username, password, http_client, headers, recovery)
     if not username or not password then
         return nil, "用户名和密码不能为空"
     end
+    if not recovery then
+        self._epoch=(self._epoch or 0)+1;self._refreshing=nil;self._recover_after=nil
+    end
+    local epoch=self._epoch or 0
 
     local body = json.encode({
         email = username,
@@ -74,7 +83,11 @@ function PicacgAuth:login(username, password, http_client, headers)
 
     if logger.enabled then logger.info("Picayomi SourceAAuth: 登录请求") end
 
-    local response, err = http_client:requestWithRetry("POST", url, req_headers, body, 15)
+    local send=recovery and http_client.request or http_client.requestWithRetry
+    local response, err = send(http_client,"POST", url, req_headers, body, 15)
+    if epoch~=(self._epoch or 0) or recovery and self._refreshing~=recovery then
+        return nil,"登录状态已改变，请重试"
+    end
     if not response then
         return nil, "网络请求失败: " .. tostring(err)
     end
@@ -87,30 +100,58 @@ function PicacgAuth:login(username, password, http_client, headers)
     if data.code == 200 and data.message == "success" then
         local token = data.data and data.data.token
         if token and token ~= "" then
-            self:setToken(token)
+            self:setToken(token,true)
             -- 账号名也是 PII, 不写明文
-            SecretStore.set(USERNAME_KEY, username)
+            SecretStore.clear(PASSWORD_KEY)
+            if SecretStore.set(USERNAME_KEY, username) then SecretStore.set(PASSWORD_KEY, password) end
             if logger.enabled then logger.info("Picayomi SourceAAuth: 登录成功") end
             return true
         end
     end
 
     local msg = data.message or "登录失败"
+    if recovery and (tonumber(response.status_code)==401 or tonumber(data.code)==401 or tonumber(data.code)==400) then
+        SecretStore.clear(PASSWORD_KEY);self:expire()
+        return nil,"自动登录失败，请重新登录并输入账号密码"
+    end
     logger.err("Picayomi SourceAAuth: 登录失败: " .. msg)
     return nil, msg
 end
 
+-- One bounded sign-in per expired session; never login for an ordinary network error.
+function PicacgAuth:recover(http_client,headers,failed_token,epoch)
+    if epoch~=(self._epoch or 0) then return nil,"登录状态已改变，请重试" end
+    if not self._expired and self:getToken()~=failed_token then return true end
+    local now=ctx.clock.now()
+    if self._refreshing and now<self._refreshing.until_at then
+        return nil,"正在恢复登录，请稍后重试"
+    end
+    if self._recover_after and now<self._recover_after then return nil,"恢复登录暂未成功，请稍后重试" end
+    local username,password=SecretStore.get(USERNAME_KEY),SecretStore.get(PASSWORD_KEY)
+    if not username or username=='' or not password or password=='' then
+        self:expire();return nil,"登录状态已失效，请重新登录"
+    end
+    local attempt={until_at=now+30};self._refreshing=attempt;self._recover_after=now+30
+    local called,ok,err=pcall(self.login,self,username,password,http_client,headers,attempt)
+    if self._refreshing==attempt then self._refreshing=nil end
+    if not called then error(ok,0)end
+    return ok,err
+end
+
 --- 退出登录
 function PicacgAuth:logout()
+    self._epoch=(self._epoch or 0)+1;self._refreshing=nil;self._recover_after=nil
     self._expired=true;clear_favorites()
     SecretStore.clear(TOKEN_KEY)
     SecretStore.clear("token")
     SecretStore.clear(USERNAME_KEY)
+    SecretStore.clear(PASSWORD_KEY)
     if logger.enabled then logger.info("Picayomi SourceAAuth: 已退出登录") end
 end
 
 --- 获取用户信息
-function PicacgAuth:getUserProfile(http_client, headers)
+function PicacgAuth:getUserProfile(http_client, headers, recovered)
+    local epoch=self._epoch or 0
     local token = self:getToken()
     if not token then
         return nil, "未登录"
@@ -126,6 +167,15 @@ function PicacgAuth:getUserProfile(http_client, headers)
     end
 
     local data = http_client:parseJsonResponse(response)
+    if epoch~=(self._epoch or 0) then return nil,"登录状态已改变，请重试" end
+    if tonumber(response.status_code)==401 or data and tonumber(data.code)==401 then
+        if not recovered then
+            local ok,err=self:recover(http_client,headers,token,epoch)
+            if ok then return self:getUserProfile(http_client,headers,true)end
+            return nil,err
+        end
+        self:expire();return nil,"登录状态已失效，请重新登录"
+    end
     if not data then
         return nil, "响应解析失败"
     end

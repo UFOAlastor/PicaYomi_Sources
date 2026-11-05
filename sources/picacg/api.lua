@@ -33,8 +33,19 @@ local CACHE_TTL = {
 -- @param path: API 路径 (如 "comics/xxx" 或 "auth/sign-in")
 -- @param body: 请求体 (POST 时传入)
 -- @return: response_data 表 (有 code/message/data) 或 nil, err
-function PicacgAPI:request(http_client, headers, auth, method, path, body, no_retry)
+function PicacgAPI:request(http_client, headers, auth, method, path, body, no_retry, recovered)
     local token = auth:getToken()
+    local epoch=auth._epoch or 0
+    local function unauthorized()
+        if epoch~=(auth._epoch or 0)then return nil,"登录状态已改变，请重试"end
+        if not recovered and not no_retry and auth.recover then
+            local ok,err=auth:recover(http_client,headers,token,epoch)
+            if ok then return self:request(http_client,headers,auth,method,path,body,no_retry,true)end
+            return nil,err
+        end
+        if auth.expire then auth:expire()end
+        return nil,"登录状态已失效，请重新登录"
+    end
     -- 允许部分接口无 token (如登录)
     local req_headers = headers:build(path, method, token)
     if not req_headers then
@@ -44,13 +55,13 @@ function PicacgAPI:request(http_client, headers, auth, method, path, body, no_re
     local url = headers:buildUrl(path)
     local send = no_retry and http_client.request or http_client.requestWithRetry
     local response, err = send(http_client, method, url, req_headers, body, 15)
+    if epoch~=(auth._epoch or 0)then return nil,"登录状态已改变，请重试"end
 
     if not response then
         return nil, "网络请求失败: " .. tostring(err)
     end
     if tonumber(response.status_code)==401 then
-        if auth.expire then auth:expire()end
-        return nil,"登录状态已失效，请重新登录"
+        return unauthorized()
     end
 
     -- 解析 JSON
@@ -65,8 +76,7 @@ function PicacgAPI:request(http_client, headers, auth, method, path, body, no_re
         return nil, "响应解析失败"
     end
     if tonumber(data.code)==401 then
-        if auth.expire then auth:expire()end
-        return nil,"登录状态已失效，请重新登录"
+        return unauthorized()
     end
 
     -- 标准化响应: 确保有 code/message/data
@@ -309,8 +319,8 @@ function PicacgAPI:getCategoryComics(http_client, headers, auth, category, page,
         categories = { category_name },
     })
 
-    local data = self:request(http_client, headers, auth, "POST", path, body)
-    if not data then return false, nil, "网络请求失败" end
+    local data,err = self:request(http_client, headers, auth, "POST", path, body)
+    if not data then return false, nil, err or "网络请求失败" end
     if not isOk(data) then return false, nil, data.message or "获取分类漫画失败" end
 
     local result = extractComicList(data)
@@ -336,8 +346,8 @@ function PicacgAPI:search(http_client, headers, auth, keyword, page, sort, categ
         categories = categories or {},
     })
 
-    local data = self:request(http_client, headers, auth, "POST", path, body)
-    if not data then return false, nil, "网络请求失败" end
+    local data,err = self:request(http_client, headers, auth, "POST", path, body)
+    if not data then return false, nil, err or "网络请求失败" end
     if not isOk(data) then return false, nil, data.message or "搜索失败" end
 
     local result = extractComicList(data)
