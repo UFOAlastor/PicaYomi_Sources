@@ -50,8 +50,22 @@ function V.wrap(ctx,implementation,options)
         local more=tonumber(data.pages) and (tonumber(data.page) or request.page or 1)<tonumber(data.pages) or data.has_more==true
         local total=tonumber(data.total)
         if options.estimated_total and method=="getComics" then total=nil end
+        local page,pages=tonumber(data.page) or request.page or 1,tonumber(data.pages)
+        local size=tonumber(data.page_size)
+        -- Older cached responses predate the API limit field. A full page, or
+        -- the exact last-page remainder, recovers the fixed page size.
+        if not size and pages then
+            if page<pages then size=#items
+            elseif pages>1 and total then size=(total-#items)/(pages-1)
+            else size=math.max(1,#items) end
+            if total and total>0 and size and size>0 and math.ceil(total/size)~=pages then size=nil end
+        end
+        local pagination
+        if pages and pages>=1 and size and size>=1 and size%1==0 then
+            pagination={mode="page",page=page,pages=pages,page_size=size}
+        end
         return true,{items=items,has_more=more,next=more and {page=(tonumber(data.page) or request.page or 1)+1} or nil,
-            total=total},nil
+            total=total,pagination=pagination},nil
     end
     function S:init()
         implementation:init()

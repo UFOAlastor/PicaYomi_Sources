@@ -2,7 +2,7 @@
   "id": "copymanga",
   "name": "拷贝漫画",
   "author": "PicaYomi contributors",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "api_version": 3,
   "min_app_version": "1.5.3",
   "entry": "main.lua",

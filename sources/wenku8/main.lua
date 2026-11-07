@@ -256,26 +256,40 @@ return function(ctx)
                     if last.pagination then break end
                     assert(last.has_more and last.next,'missing shelf continuation')
                     local n=H.page(last.next)
-                    last=fetch(n);tail={page=n,result=last}
+                    local tail_records
+                    last,tail_records=fetch(n);tail={page=n,result=last,records=tail_records}
                 end
                 assert(last.pagination,'shelf end was not confirmed')
-                favorite_pages={time=ctx.clock.now(),pages=last.pagination.pages,
+                local pages=last.pagination.pages
+                if pages==1 then tail={page=1,result=first,records=records}
+                elseif not tail or tail.page~=pages then
+                    local result,tail_records=fetch(pages)
+                    tail={page=pages,result=result,records=tail_records}
+                end
+                assert(tail.result.pagination and tail.result.pagination.pages==pages,'shelf range changed')
+                assert(#tail.result.items<=20 and (pages==1 or #tail.result.items>0),'invalid shelf tail')
+                favorite_pages={time=ctx.clock.now(),pages=pages,total=(pages-1)*20+#tail.result.items,
                     first=first,records=records,tail=tail}
             end
             local pages=favorite_pages.pages
             assert(p<=pages,'shelf page outside confirmed range')
-            local physical=pages-p+1
-            local result,records
-            if physical==1 then result,records=favorite_pages.first,favorite_pages.records
-            elseif favorite_pages.tail and favorite_pages.tail.page==physical then result=favorite_pages.tail.result
-            else result,records=fetch(physical)end
-            if result.pagination and result.pagination.pages~=pages then
-                favorite_pages=nil;H.fail('invalid_response','书架分页已变化，请返回第一页刷新',true)
+            local total=favorite_pages.total
+            local loaded={[1]=favorite_pages.first,[pages]=favorite_pages.tail.result}
+            local items,records={},favorite_pages.records
+            -- Reverse the complete sequence, then split into fixed logical
+            -- pages. A short physical tail must not shift every jump offset.
+            for position=total-(p-1)*20,math.max(1,total-p*20+1),-1 do
+                local physical=math.ceil(position/20)
+                local result=loaded[physical]
+                if not result then result=fetch(physical);loaded[physical]=result end
+                if result.pagination and result.pagination.pages~=pages
+                    or #result.items~=(physical==pages and #favorite_pages.tail.result.items or 20) then
+                    favorite_pages=nil;H.fail('invalid_response','书架分页已变化，请返回第一页刷新',true)
+                end
+                items[#items+1]=assert(result.items[(position-1)%20+1],'shelf item missing')
             end
-            local items={}
-            for i=#result.items,1,-1 do items[#items+1]=result.items[i]end
-            result={items=items,has_more=p<pages,next=p<pages and {page=p+1} or nil,
-                pagination={mode='page',page=p,pages=pages,page_size=math.max(20,#items)}}
+            local result={items=items,total=total,has_more=p<pages,next=p<pages and {page=p+1} or nil,
+                pagination={mode='page',page=p,pages=pages,page_size=20}}
             if p==1 and not result.has_more then
                 local ids={};for _,item in ipairs(result.items) do ids[item.id]=true end
                 favorite_cache={time=ctx.clock.now(),ids=ids,records=records,pages={}}

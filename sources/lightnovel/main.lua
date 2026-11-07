@@ -20,12 +20,13 @@ return function(ctx)
         return b
     end
 
-    local function listing(d,p,size)
+    local function listing(d,p,size,indexed)
         local more,q=pagination(d,p,size);local items={}
         for _,v in ipairs(d.list)do items[#items+1]=book(v)end
         local next_page=more and {page=p+1} or nil
-        if next_page and type(d.sequence_id)=='string' and #d.sequence_id>0 and #d.sequence_id<=256 then next_page.sequence_id=d.sequence_id end
-        return {items=items,total=q.total,has_more=more,next=next_page}
+        if not indexed and next_page and type(d.sequence_id)=='string' and #d.sequence_id>0 and #d.sequence_id<=256 then next_page.sequence_id=d.sequence_id end
+        return {items=items,total=q.total,has_more=more,next=next_page,
+            pagination=indexed and {mode='page',page=p,pages=math.max(1,q.page_count),page_size=size} or nil}
     end
     function S:init()A.restore();return true,{success=true},nil end
     function S:getSession()return true,{logged_in=A.logged(),cache_scope=A.cacheScope()},nil end
@@ -68,7 +69,7 @@ return function(ctx)
         return listing(post('bff/book-rank-list-v1',{rank_scene=kind,page=p,page_size=20,pageSize=20},call),p,20)
     end)end
     function S:getFavorites(r,call)return run('getFavorites',function()
-        A.requireLogin();local p=page(r);local result=listing(post('bff/bookshelf-v1',{page=p,pageSize=20},call),p,20)
+        A.requireLogin();local p=page(r);local result=listing(post('bff/bookshelf-v1',{page=p,pageSize=20},call),p,20,true)
         for _,item in ipairs(result.items)do item.favorite=true end
         return result
     end)end

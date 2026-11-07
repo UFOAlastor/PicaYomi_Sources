@@ -560,7 +560,9 @@ return function(ctx)
                 thumb=self:absolute(str(comic.cover)),isFavourite=true}
         end
         assert(#comics<=12 and (#comics>0 or (page-1)*12>=total), "收藏列表未完整返回")
-        return {comics=comics,page=page,pages=math.max(1,math.ceil(total/12)),total=total}
+        local pages=math.max(1,math.ceil(total/12))
+        return {comics=comics,page=page,pages=pages,total=total,
+            pagination=page<=pages and {mode="page",page=page,pages=pages,page_size=12} or nil}
     end)
     function S:setFavorite(id, wanted)
         local ok, err = pcall(function()

@@ -154,7 +154,7 @@ end
 local function extractComicList(data)
     if not data or not data.data then return nil end
     local comics_raw = nil
-    local total, page, pages = 0, 1, 1
+    local total, page, pages, page_size = 0, 1, 1, nil
 
     -- 标准: data.comics.docs
     --
@@ -167,6 +167,7 @@ local function extractComicList(data)
         total = JN.num(data.data.comics.total, #comics_raw)
         page = JN.num(data.data.comics.page, 1)
         pages = JN.num(data.data.comics.pages, 1)
+        page_size = tonumber(data.data.comics.limit)
 
     -- 数组: data.comics 直接是数组
     elseif data.data.comics and type(data.data.comics) == "table" and #data.data.comics > 0 then
@@ -200,6 +201,7 @@ local function extractComicList(data)
         total = total,
         page = page,
         pages = pages,
+        page_size = page_size,
     }
 end
 

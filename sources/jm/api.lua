@@ -1184,6 +1184,7 @@ function Api._getFavorites(page)
         page = page or 1,
         total = total,
         pages = math.max(1, math.ceil(total / per)),
+        pagination = {mode="page",page=page or 1,pages=math.max(1,math.ceil(total/per)),page_size=per},
     }
 end
 
